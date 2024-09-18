@@ -6,6 +6,9 @@
 
 Before using this app, it's important to note that a separate sentiment analysis task must be performed on the McDonald's store reviews dataset. This preliminary step classifies the sentiments of customer reviews, which is crucial for the in-depth analysis provided by this app. Ensure that your dataset includes a 'sentiment' column with classified sentiments before proceeding with the analysis in this app.
 
+A sample sentiment analysis using Llama3.1 can be found here:
+https://www.kaggle.com/code/yorkyong/sentiment-analysis-with-llama-3-1
+
 ## Introduction
 
 The McDonald's Store Analysis App is a powerful tool designed to help McDonald's management gain valuable insights into customer sentiments and store performance across various locations. By leveraging advanced natural language processing and data analysis techniques, this app provides a comprehensive view of customer feedback and store metrics.
@@ -143,3 +146,9 @@ See `requirements.txt` for a full list of dependencies. Key libraries include:
 
 Dataset is obtained from Kaggle.com
 https://www.kaggle.com/datasets/nelgiriyewithana/mcdonalds-store-reviews
+
+## Demo
+
+Here is how the app looks like when running with a user query.
+
+![](https://raw.githubusercontent.com/yYorky/Mcdonalds-Sentiment-Analysis-App/main/static/Demo.JPG)
