@@ -83,7 +83,7 @@ To run the McDonald's Store Analysis App, follow these steps:
 
 1. Clone the repository:
    ```
-   git clone https://github.com/your-repo/mcdonalds-analysis-app.git
+   git clone https://github.com/yYorky/Mcdonalds-Sentiment-Analysis-App.git
    cd mcdonalds-analysis-app
    ```
 
