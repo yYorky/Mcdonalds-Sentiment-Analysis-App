@@ -31,17 +31,19 @@ This app empowers McDonald's management to:
 - Make data-driven decisions to enhance customer experience and store performance.
 - Track the impact of implemented changes over time.
 
-Question Handling Approach
+### Question Handling Approach
 The app uses a sophisticated two-step approach to handle user questions:
-1. LLM-based Approach Selection
+
+#### 1. LLM-based Approach Selection
 When a user asks a question, the app first employs a Large Language Model (LLM) to determine the most appropriate method for answering the question. This decision-making process considers the nature of the question and the type of information required to provide an accurate and comprehensive answer.
 The LLM analyzes the question and decides between two main approaches:
 
 PANDAS: For questions requiring specific numerical analysis, statistics, or structured data manipulation.
 RAG (Retrieval-Augmented Generation): For questions needing general information, qualitative data, or insights from customer reviews.
 
-2. Question Processing
+#### 2. Question Processing
 Based on the LLM's decision, the app then uses one of two approaches to process the question:
+
 PANDAS Approach
 If the LLM determines that the question is best answered using structured data analysis:
 
