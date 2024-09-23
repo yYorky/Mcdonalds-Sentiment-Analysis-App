@@ -30,6 +30,12 @@ css = '''
     border-radius: 5px;
     margin-top: 10px;
 }
+.chat-container {
+    height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column-reverse;
+}
 </style>
 '''
 
