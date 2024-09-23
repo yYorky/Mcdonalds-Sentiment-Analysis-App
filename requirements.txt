@@ -31,4 +31,9 @@ typing
 langchain_experimental
 tabulate
 streamlit-autorefresh
-
+beautifultable
+camelot-py
+opencv-python
+ghostscript
+lxml
+tenacity
