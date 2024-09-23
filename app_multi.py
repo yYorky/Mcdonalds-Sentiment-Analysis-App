@@ -1,15 +1,13 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 from langchain_groq import ChatGroq
 from langchain_experimental.agents import create_pandas_dataframe_agent
-from langchain.schema import HumanMessage, SystemMessage
 from langchain.callbacks import StreamlitCallbackHandler
 from langchain_community.document_loaders import CSVLoader
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import ConversationalRetrievalChain
+from langchain.chains.conversational_retrieval.base import ConversationalRetrievalChain
 from langchain_community.vectorstores import FAISS
 from dotenv import load_dotenv
 import os
