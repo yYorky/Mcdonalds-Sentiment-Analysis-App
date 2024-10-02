@@ -115,26 +115,26 @@ def make_api_call(messages, max_tokens, is_final_answer=False):
                     return {"title": "Error", "content": f"Failed to generate step after 3 attempts. Error: {str(e)}", "next_action": "final_answer"}
             time.sleep(1)  # Wait for 1 second before retrying
         
-def generate_response(prompt, initial_response, thought_process):
+def generate_response(prompt, initial_response, intermediate_steps):
     messages = [
         {"role": "system", "content": """You are an expert AI assistant that explains your reasoning step by step.  
          For each step, provide a title that describes what you're doing in that step, along with the content. 
          Decide if you need another step or if you're ready to give the final answer. 
          Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. 
          USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. 
-             BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, 
-             INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, 
-             WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, 
-             ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. 
-             USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES."""},
+         BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, 
+         INCLUDE EXPLORATION OF ALTERNATIVE ANSWERS. CONSIDER YOU MAY BE WRONG, AND IF YOU ARE WRONG IN YOUR REASONING, 
+         WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, 
+         ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. 
+         USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.
+         ENSURE YOUR FINAL ANSWER IS CONSISTENT WITH THE INTERMEDIATE STEPS AND RESULTS."""},
         
         {"role": "user", "content": f"""Initial response: {initial_response}
-         \nThought process: {thought_process}
+         Intermediate steps: {intermediate_steps}
          \n
          \nBased on this information, {prompt}"""},
         
-        {"role": "assistant", "content": "Thank you! I will now think step by step following my instructions, \
-         starting at the beginning after decomposing the problem and considering the provided thought process."}
+        {"role": "assistant", "content": "I will now think step by step, starting with the provided information and intermediate steps."}
     ]
     
     steps = []
@@ -158,10 +158,11 @@ def generate_response(prompt, initial_response, thought_process):
         step_count += 1
         yield steps, None
 
-    messages.append({"role": "user", "content": "Please provide the final answer based solely on your reasoning above. \
-                     Do not use JSON formatting. Only provide the text response without any titles or preambles. \
-                     Retain any formatting as instructed by the original prompt, \
-                     such as exact formatting for free response or multiple choice."})
+    messages.append({"role": "user", "content": """Please provide the final answer based solely on your reasoning above. 
+                     Ensure your answer is consistent with the intermediate steps and results.
+                     Do not use JSON formatting. Only provide the text response without any titles or preambles. 
+                     Retain any formatting as instructed by the original prompt, 
+                     such as exact formatting for free response or multiple choice."""})
     
     start_time = time.time()
     final_data = make_api_call(messages, 1200, is_final_answer=True)
@@ -181,10 +182,10 @@ def handle_user_input(user_question: str):
             try:
                 response = st.session_state.pandas_agent.invoke(user_question, callbacks=[st_callback])
                 response_content = response.get('output', str(response)) if isinstance(response, dict) else str(response)
-                thought_process = response.get('intermediate_steps', []) if isinstance(response, dict) else []
-                formatted_thought_process = "\n".join([
+                intermediate_steps = response.get('intermediate_steps', []) if isinstance(response, dict) else []
+                formatted_intermediate_steps = "\n".join([
                     f"Thought: {step[0].log}\nAction: {step[0].tool}\nAction Input: {step[0].tool_input}\nObservation: {step[1]}\n"
-                    for step in thought_process
+                    for step in intermediate_steps
                 ])
 
                 # Use the modified reasoning chain to generate a detailed response
@@ -193,7 +194,7 @@ def handle_user_input(user_question: str):
                 for steps, time in generate_response(
                     "provide a detailed analysis",
                     response_content,
-                    formatted_thought_process
+                    formatted_intermediate_steps
                 ):
                     reasoning_steps = steps
                     if time is not None:
@@ -205,7 +206,7 @@ def handle_user_input(user_question: str):
                 final_answer = reasoning_steps[-1][1]
                 
                 full_thought_process = (
-                    f"Initial Thought Process:\n{formatted_thought_process}\n\n"
+                    f"Initial Pandas Agent Steps:\n{formatted_intermediate_steps}\n\n"
                     "Detailed Reasoning:\n" +
                     "\n".join([f"{step[0]}\n{step[1]}" for step in reasoning_steps[:-1]]) +
                     f"\n\nFinal Answer: {final_answer}\n\n"

@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from langchain.schema import HumanMessage, SystemMessage
 
-def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_dataframe_grouped(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocess the dataframe by cleaning and aggregating data.
     
@@ -50,6 +50,47 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     }).reset_index()
     
     return df_grouped
+
+def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Preprocess the dataframe by cleaning and aggregating data.
+    
+    Args:
+        df (pd.DataFrame): The input dataframe.
+    
+    Returns:
+        pd.DataFrame: The preprocessed dataframe.
+    """
+    # Create a copy of the dataframe to avoid SettingWithCopyWarning
+    df = df.copy()
+    
+    # Define a mapping for star ratings
+    rating_map = {
+        '1 star': 1.0,
+        '2 stars': 2.0,
+        '3 stars': 3.0,
+        '4 stars': 4.0,
+        '5 stars': 5.0
+    }
+    
+    # Map ratings using the defined dictionary
+    df['rating'] = df['rating'].replace(rating_map)
+    
+    # Drop rows with NaN ratings
+    df = df.dropna(subset=['rating'])
+    
+    # Convert latitude and longitude to numeric
+    df['latitude'] = pd.to_numeric(df['latitude '], errors='coerce')
+    df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
+    
+    # Drop rows with NaN latitude or longitude
+    df = df.dropna(subset=['latitude', 'longitude'])
+    
+    # Recalculate rating_count for each store_address
+    df['rating_count'] = df.groupby('store_address')['rating'].transform('count')
+        
+    return df
+
 
 
 def create_map(df: pd.DataFrame) -> go.Figure:
