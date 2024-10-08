@@ -1,0 +1,9 @@
+-Basic
+how many stores are there?
+how many store are there in florida?
+
+-Intermediate
+For store FL-ORL-03 what is the breakdown of positive, neutral and negative reviews?
+
+-Advanced
+For store FL-ORL-03 what are the negative reviews about? what can be done to improve? (14 seconds)
