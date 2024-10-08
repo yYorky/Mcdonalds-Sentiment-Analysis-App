@@ -22,7 +22,7 @@ load_dotenv()
 
 # Constants
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MODEL_OPTIONS = ['llama-3.2-90b-text-preview', 'llama-3.1-70b-versatile', 'llama3-70b-8192', 'gemma2-9b-it', 'mixtral-8x7b-32768']
+MODEL_OPTIONS = ['llama-3.1-70b-versatile', 'llama3-70b-8192', 'llama-guard-3-8b' 'gemma2-9b-it', 'mixtral-8x7b-32768']
 
 @st.cache_resource
 def load_llm(model_name: str) -> ChatGroq:
