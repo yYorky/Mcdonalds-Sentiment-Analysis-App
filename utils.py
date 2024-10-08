@@ -14,41 +14,39 @@ def preprocess_dataframe_grouped(df: pd.DataFrame) -> pd.DataFrame:
     """
     # Create a copy of the dataframe to avoid SettingWithCopyWarning
     df = df.copy()
-    
-    # # Define a mapping for star ratings
-    # rating_map = {
-    #     '1 star': 1.0,
-    #     '2 stars': 2.0,
-    #     '3 stars': 3.0,
-    #     '4 stars': 4.0,
-    #     '5 stars': 5.0
-    # }
-    
-    # # Map ratings using the defined dictionary
-    # df['rating'] = df['rating'].replace(rating_map)
-    
-    # # Drop rows with NaN ratings
-    # df = df.dropna(subset=['rating'])
-    
+        
     # Convert latitude and longitude to numeric
     df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
-    
-    # # Drop rows with NaN latitude or longitude
-    # df = df.dropna(subset=['latitude', 'longitude'])
-    
-    # # Recalculate rating_count for each store_address
-    # df['rating_count'] = df.groupby('store_address')['rating'].transform('count')
-    
-    # Group by store_address and calculate weighted average rating
+       
+    # Group by store_address and calculate aggregates
     df_grouped = df.groupby('store_address').agg({
         'latitude': 'first',
         'longitude': 'first',
         'store_no': 'first',
-        # 'rating_count': 'first',
-        # 'rating': lambda x: round((x * df.loc[x.index, 'rating_count']).sum() / df.loc[x.index, 'rating_count'].sum(), 2) if df.loc[x.index, 'rating_count'].sum() != 0 else round(x.mean(), 2),
-        'actual_sentiment': lambda x: x.mode().iloc[0] if not x.empty else None
+        'actual_sentiment': [
+            ('mode', lambda x: x.mode().iloc[0] if not x.empty else None),
+            ('total_positive', lambda x: (x == 'positive').sum()),
+            ('total_negative', lambda x: (x == 'negative').sum()),
+            ('total_neutral', lambda x: (x == 'neutral').sum())
+        ]
     }).reset_index()
+    
+        
+    # Flatten the column names
+    df_grouped.columns = ['_'.join(col).strip() for col in df_grouped.columns.values]
+    
+    # Rename the columns for clarity
+    df_grouped = df_grouped.rename(columns={
+        'store_address_': 'store_address',  # Keep store_address as a column
+        'latitude_first': 'latitude',
+        'longitude_first': 'longitude',
+        'store_no_first': 'store_no',
+        'actual_sentiment_mode': 'actual_sentiment_mode',
+        'actual_sentiment_total_positive': 'positive_review_count',
+        'actual_sentiment_total_negative': 'negative_review_count',
+        'actual_sentiment_total_neutral': 'neutral_review_count'
+    })
     
     return df_grouped
 
@@ -91,7 +89,7 @@ def create_map(df: pd.DataFrame) -> go.Figure:
     }
     
     # Map sentiments to colors
-    colors = df['actual_sentiment'].map(color_map)
+    colors = df['actual_sentiment_mode'].map(color_map)
     
     fig = go.Figure()
     fig.add_trace(go.Scattermapbox(
@@ -111,7 +109,7 @@ def create_map(df: pd.DataFrame) -> go.Figure:
         "<b>%{text}</b><br>" +
         "Store No: %{customdata[0]}<br>" +
         "General Sentiment: Mostly %{customdata[1]}<extra></extra>",
-        customdata=df[['store_no', 'actual_sentiment']]
+        customdata=df[['store_no', 'actual_sentiment_mode']]
     ))
     fig.update_layout(
         mapbox_style="open-street-map",
