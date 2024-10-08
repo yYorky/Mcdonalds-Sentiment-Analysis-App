@@ -15,45 +15,46 @@ def preprocess_dataframe_grouped(df: pd.DataFrame) -> pd.DataFrame:
     # Create a copy of the dataframe to avoid SettingWithCopyWarning
     df = df.copy()
     
-    # Define a mapping for star ratings
-    rating_map = {
-        '1 star': 1.0,
-        '2 stars': 2.0,
-        '3 stars': 3.0,
-        '4 stars': 4.0,
-        '5 stars': 5.0
-    }
+    # # Define a mapping for star ratings
+    # rating_map = {
+    #     '1 star': 1.0,
+    #     '2 stars': 2.0,
+    #     '3 stars': 3.0,
+    #     '4 stars': 4.0,
+    #     '5 stars': 5.0
+    # }
     
-    # Map ratings using the defined dictionary
-    df['rating'] = df['rating'].replace(rating_map)
+    # # Map ratings using the defined dictionary
+    # df['rating'] = df['rating'].replace(rating_map)
     
-    # Drop rows with NaN ratings
-    df = df.dropna(subset=['rating'])
+    # # Drop rows with NaN ratings
+    # df = df.dropna(subset=['rating'])
     
     # Convert latitude and longitude to numeric
-    df['latitude'] = pd.to_numeric(df['latitude '], errors='coerce')
+    df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
     
-    # Drop rows with NaN latitude or longitude
-    df = df.dropna(subset=['latitude', 'longitude'])
+    # # Drop rows with NaN latitude or longitude
+    # df = df.dropna(subset=['latitude', 'longitude'])
     
-    # Recalculate rating_count for each store_address
-    df['rating_count'] = df.groupby('store_address')['rating'].transform('count')
+    # # Recalculate rating_count for each store_address
+    # df['rating_count'] = df.groupby('store_address')['rating'].transform('count')
     
     # Group by store_address and calculate weighted average rating
     df_grouped = df.groupby('store_address').agg({
         'latitude': 'first',
         'longitude': 'first',
-        'rating_count': 'first',
-        'rating': lambda x: round((x * df.loc[x.index, 'rating_count']).sum() / df.loc[x.index, 'rating_count'].sum(), 2) if df.loc[x.index, 'rating_count'].sum() != 0 else round(x.mean(), 2),
-        'sentiment': lambda x: x.mode().iloc[0] if not x.empty else None
+        'store_no': 'first',
+        # 'rating_count': 'first',
+        # 'rating': lambda x: round((x * df.loc[x.index, 'rating_count']).sum() / df.loc[x.index, 'rating_count'].sum(), 2) if df.loc[x.index, 'rating_count'].sum() != 0 else round(x.mean(), 2),
+        'actual_sentiment': lambda x: x.mode().iloc[0] if not x.empty else None
     }).reset_index()
     
     return df_grouped
 
 def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Preprocess the dataframe by cleaning and aggregating data.
+    Preprocess the dataframe by cleaning and aggregating data. Works for csv file 'dashboard_data'
     
     Args:
         df (pd.DataFrame): The input dataframe.
@@ -63,39 +64,18 @@ def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
     # Create a copy of the dataframe to avoid SettingWithCopyWarning
     df = df.copy()
-    
-    # Define a mapping for star ratings
-    rating_map = {
-        '1 star': 1.0,
-        '2 stars': 2.0,
-        '3 stars': 3.0,
-        '4 stars': 4.0,
-        '5 stars': 5.0
-    }
-    
-    # Map ratings using the defined dictionary
-    df['rating'] = df['rating'].replace(rating_map)
-    
-    # Drop rows with NaN ratings
-    df = df.dropna(subset=['rating'])
-    
+       
     # Convert latitude and longitude to numeric
-    df['latitude'] = pd.to_numeric(df['latitude '], errors='coerce')
+    df['latitude'] = pd.to_numeric(df['latitude'], errors='coerce')
     df['longitude'] = pd.to_numeric(df['longitude'], errors='coerce')
-    
-    # Drop rows with NaN latitude or longitude
-    df = df.dropna(subset=['latitude', 'longitude'])
-    
-    # Recalculate rating_count for each store_address
-    df['rating_count'] = df.groupby('store_address')['rating'].transform('count')
-        
+            
     return df
 
 
 
 def create_map(df: pd.DataFrame) -> go.Figure:
     """
-    Create an interactive map using Plotly.
+    Create an interactive map using Plotly with sentiment-based marker colors.
     
     Args:
         df (pd.DataFrame): The preprocessed dataframe.
@@ -103,6 +83,16 @@ def create_map(df: pd.DataFrame) -> go.Figure:
     Returns:
         go.Figure: The Plotly figure object for the map.
     """
+    # Define color mapping for sentiments
+    color_map = {
+        'positive': 'green',
+        'neutral': 'yellow',
+        'negative': 'red'
+    }
+    
+    # Map sentiments to colors
+    colors = df['actual_sentiment'].map(color_map)
+    
     fig = go.Figure()
     fig.add_trace(go.Scattermapbox(
         lat=df['latitude'],
@@ -110,7 +100,7 @@ def create_map(df: pd.DataFrame) -> go.Figure:
         mode='markers',
         marker=go.scattermapbox.Marker(
             size=15,
-            color='red',
+            color=colors,
             opacity=0.7,
             sizemin=5,
             sizemode='area'
@@ -119,10 +109,9 @@ def create_map(df: pd.DataFrame) -> go.Figure:
         hoverinfo='text',
         hovertemplate=
         "<b>%{text}</b><br>" +
-        "Rating Count: %{customdata[0]}<br>" +
-        "Average Rating: %{customdata[1]:.2f}<br>" +
-        "Sentiment: %{customdata[2]}<extra></extra>",
-        customdata=df[['rating_count', 'rating', 'sentiment']]
+        "Store No: %{customdata[0]}<br>" +
+        "General Sentiment: Mostly %{customdata[1]}<extra></extra>",
+        customdata=df[['store_no', 'actual_sentiment']]
     ))
     fig.update_layout(
         mapbox_style="open-street-map",
@@ -134,6 +123,26 @@ def create_map(df: pd.DataFrame) -> go.Figure:
         height=600,
         margin={"r":0,"t":0,"l":0,"b":0}
     )
+    
+    # Add a legend
+    for sentiment, color in color_map.items():
+        fig.add_trace(go.Scattermapbox(
+            lat=[None],
+            lon=[None],
+            mode='markers',
+            marker=dict(size=10, color=color),
+            name=sentiment.capitalize(),
+            showlegend=True
+        ))
+    
+    fig.update_layout(legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    ))
+    
     return fig
 
 def get_conversational_response(llm, original_response: str, user_question: str) -> str:

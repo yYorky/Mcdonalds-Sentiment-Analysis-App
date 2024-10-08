@@ -1,35 +1,35 @@
+# Issues cannot answer basic store number question properly
+# not clearing thought process before display chat history
+# requires multiple reload of dataset for each question
+
+
 import streamlit as st
 import pandas as pd
+import numpy as np
 from langchain_groq import ChatGroq
+from langchain.agents import Tool
 from langchain_experimental.agents import create_pandas_dataframe_agent
-from langchain.callbacks import StreamlitCallbackHandler
 from langchain.agents import AgentExecutor
+from langchain.callbacks import StreamlitCallbackHandler
 from dotenv import load_dotenv
 import os
 import time
 import json
 import groq
-
-# New imports for text analysis
+import plotly.express as px
 import re
-from collections import Counter
-import nltk
-from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
-
-# Download NLTK data
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
+import ast
+import io
 
 # Import HTML templates and utility functions (assuming they're in separate files)
 from htmlTemplates import css, bot_template, user_template
-from utils import preprocess_dataframe_grouped, preprocess_dataframe, create_map
+from utils import preprocess_dataframe_grouped, create_map
 
 load_dotenv()
 
 # Constants
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MODEL_OPTIONS = ['llama-3.1-70b-versatile','llama-3.2-90b-text-preview','llama-3.1-8b-instant']
+MODEL_OPTIONS = ['llama-3.1-70b-versatile', 'llama-3.2-90b-text-preview', 'llama-3.1-8b-instant']
 
 @st.cache_resource
 def load_llm(model_name: str) -> ChatGroq:
@@ -44,10 +44,10 @@ def initialize_session_state():
     default_states = {
         "df": None,
         "df_processed": None,
-        "pandas_agent": None,
         "chat_history": [],
         "llm": None,
         "groq_client": groq.Groq(),
+        "pandas_agent": None,
     }
     for key, default_value in default_states.items():
         if key not in st.session_state:
@@ -70,20 +70,28 @@ def handle_file_upload(uploaded_file):
             st.sidebar.subheader("Data Preview (Raw)")
             st.sidebar.dataframe(st.session_state.df.head())
             
-            create_pandas_agent()
+            # Create pandas agent
+            st.session_state.pandas_agent = create_pandas_dataframe_agent(
+                st.session_state.llm,
+                st.session_state.df,
+                verbose=True,
+                agent_type="zero-shot-react-description",
+                handle_parsing_errors=True,
+                return_intermediate_steps=True,
+                allow_dangerous_code=True,
+            )
+            
+            # Log DataFrame info for debugging
+            st.sidebar.write(f"DataFrame shape: {st.session_state.df.shape}")
+            st.sidebar.write(f"DataFrame columns: {st.session_state.df.columns.tolist()}")
+            
         except Exception as e:
             st.sidebar.error(f"Error processing file: {str(e)}")
-
-def create_pandas_agent():
-    if st.session_state.df is not None and st.session_state.llm is not None:
-        st.session_state.pandas_agent = create_pandas_dataframe_agent(
-            st.session_state.llm,
-            st.session_state.df,
-            verbose=True,
-            agent_type="zero-shot-react-description",
-            return_intermediate_steps=True,
-            allow_dangerous_code=True,
-        )
+            
+    else:
+        st.session_state.df = None
+        st.session_state.df_processed = None
+        st.session_state.pandas_agent = None
 
 def make_api_call(messages, max_tokens, is_final_answer=False):
     client = st.session_state.groq_client
@@ -114,12 +122,45 @@ def make_api_call(messages, max_tokens, is_final_answer=False):
                 else:
                     return {"title": "Error", "content": f"Failed to generate step after 3 attempts. Error: {str(e)}", "next_action": "final_answer"}
             time.sleep(1)  # Wait for 1 second before retrying
-        
-def generate_response(prompt, initial_response, intermediate_steps):
+
+def get_dataset_info():
+    if st.session_state.df is not None:
+        columns = st.session_state.df.columns.tolist()
+        sample_data = st.session_state.df.head().to_dict(orient='records')
+        return f"""
+        Dataset Information:
+        Columns: {columns}
+        Sample Data (first 5 rows): {json.dumps(sample_data, indent=2)}
+        """
+    return "No dataset loaded."
+
+def execute_pandas_agent(query):
+    if st.session_state.pandas_agent is None:
+        return "Error: Pandas agent is not initialized. Please upload a CSV file first."
+    try:
+        result = st.session_state.pandas_agent.invoke(query)
+        return result
+    except Exception as e:
+        return f"Error executing pandas agent: {str(e)}"
+
+def generate_response(prompt):
+    if st.session_state.df is None:
+        return [("Error", "No dataset loaded. Please upload a CSV file first.", 0)], 0
+
+    dataset_info = get_dataset_info()
     messages = [
-        {"role": "system", "content": """You are an expert AI assistant that explains your reasoning step by step.  
-         For each step, provide a title that describes what you're doing in that step, along with the content. 
-         Decide if you need another step or if you're ready to give the final answer. 
+        {"role": "system", "content": f"""You are an expert AI assistant analyzing McDonald's store data. 
+         You have access to the following dataset:
+
+         {dataset_info}
+
+         You can perform data analysis by using the pandas_agent. To use it, format your request as:
+         [PANDAS_AGENT: your question or analysis request]
+
+         Example: [PANDAS_AGENT: What is the average revenue across all stores?]
+
+         Explain your reasoning step by step. For each step, provide a title that describes what you're doing in that step, 
+         along with the content. Decide if you need another step or if you're ready to give the final answer. 
          Respond in JSON format with 'title', 'content', and 'next_action' (either 'continue' or 'final_answer') keys. 
          USE AS MANY REASONING STEPS AS POSSIBLE. AT LEAST 3. 
          BE AWARE OF YOUR LIMITATIONS AS AN LLM AND WHAT YOU CAN AND CANNOT DO. IN YOUR REASONING, 
@@ -127,14 +168,10 @@ def generate_response(prompt, initial_response, intermediate_steps):
          WHERE IT WOULD BE. FULLY TEST ALL OTHER POSSIBILITIES. YOU CAN BE WRONG. WHEN YOU SAY YOU ARE RE-EXAMINING, 
          ACTUALLY RE-EXAMINE, AND USE ANOTHER APPROACH TO DO SO. DO NOT JUST SAY YOU ARE RE-EXAMINING. 
          USE AT LEAST 3 METHODS TO DERIVE THE ANSWER. USE BEST PRACTICES.
-         ENSURE YOUR FINAL ANSWER IS CONSISTENT WITH THE INTERMEDIATE STEPS AND RESULTS."""},
-        
-        {"role": "user", "content": f"""Initial response: {initial_response}
-         Intermediate steps: {intermediate_steps}
-         \n
-         \nBased on this information, {prompt}"""},
-        
-        {"role": "assistant", "content": "I will now think step by step, starting with the provided information and intermediate steps."}
+         ENSURE YOUR FINAL ANSWER IS CONSISTENT WITH THE INTERMEDIATE STEPS AND RESULTS.
+         Base your analysis and answers on the provided dataset information and the analyses you perform using the pandas_agent."""},
+        {"role": "user", "content": prompt},
+        {"role": "assistant", "content": "I will now think step by step to answer your question about McDonald's store data, based on the provided dataset and using the pandas_agent for analysis."}
     ]
     
     steps = []
@@ -148,17 +185,25 @@ def generate_response(prompt, initial_response, intermediate_steps):
         thinking_time = end_time - start_time
         total_thinking_time += thinking_time
         
-        steps.append((f"Step {step_count}: {step_data['title']}", step_data['content'], thinking_time))
+        # Check if the step contains a pandas_agent request
+        content = step_data['content']
+        pandas_agent_requests = re.findall(r'\[PANDAS_AGENT: ([^\]]+)\]', content)
+        for request in pandas_agent_requests:
+            result = execute_pandas_agent(request)
+            content = content.replace(f"[PANDAS_AGENT: {request}]", f"Pandas Agent Result: {result}")
         
-        messages.append({"role": "assistant", "content": json.dumps(step_data)})
+        steps.append((f"Step {step_count}: {step_data['title']}", content, thinking_time))
+        
+        messages.append({"role": "assistant", "content": json.dumps({"title": step_data['title'], "content": content, "next_action": step_data['next_action']})})
+        
+        yield steps, None  # Yield intermediate steps
         
         if step_data['next_action'] == 'final_answer' or step_count > 25:
             break
         
         step_count += 1
-        yield steps, None
 
-    messages.append({"role": "user", "content": """Please provide the final answer based solely on your reasoning above. 
+    messages.append({"role": "user", "content": """Please provide the final answer based solely on your reasoning above and the provided dataset. 
                      Ensure your answer is consistent with the intermediate steps and results.
                      Do not use JSON formatting. Only provide the text response without any titles or preambles. 
                      Retain any formatting as instructed by the original prompt, 
@@ -173,101 +218,37 @@ def generate_response(prompt, initial_response, intermediate_steps):
     steps.append(("Final Answer", final_data, thinking_time))
     yield steps, total_thinking_time
 
-def generate_insightful_response(user_question, initial_response, thought_process):
-    complexity_prompt = f"""
-    Analyze the following question and determine if it requires a simple, direct answer or a more complex, detailed response:
-
-    Question: "{user_question}"
-
-    If the question can be answered with a brief, direct response (e.g., a single number or a short phrase), classify it as "simple".
-    If the question requires more context, analysis, or explanation, classify it as "complex".
-
-    Respond with either "simple" or "complex".
-
-    Classification:
-    """
-
-    messages = [
-        {"role": "system", "content": "You are an AI assistant that analyzes questions to determine their complexity."},
-        {"role": "user", "content": complexity_prompt}
-    ]
-
-    complexity = make_api_call(messages, 50, is_final_answer=True).strip().lower()
-
-    if complexity == "simple":
-        response_prompt = f"""
-        Provide a concise and direct answer to the question: "{user_question}"
-        Based on the following analysis:
-
-        {initial_response}
-
-        Your response should:
-        1. Directly answer the question
-        2. Be brief and to the point
-        3. Include the specific number or result if applicable
-        4. Optionally, add one sentence of context if relevant
-
-        Response:
-        """
-    else:
-        response_prompt = f"""
-        As a helpful assistant for management, provide an insightful and detailed response to the question: "{user_question}"
-        Based on the following analysis:
-
-        Initial response: {initial_response}
-
-        Thought process: {thought_process}
-
-        Your response should:
-        1. Summarize the key findings
-        2. Provide context and implications for management
-        3. Suggest potential actions or areas for further investigation
-        4. Be clear, concise, and professional in tone
-
-        Response:
-        """
-
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant for management, providing insightful analysis of McDonald's store data."},
-        {"role": "user", "content": response_prompt}
-    ]
-
-    insightful_response = make_api_call(messages, 500, is_final_answer=True)
-    return insightful_response
-
-
 def handle_user_input(user_question: str):
-    if user_question and st.session_state.pandas_agent:
-        with st.spinner("Analyzing..."):
-            live_output = st.empty()
-            thought_process = st.empty()
-            st_callback = StreamlitCallbackHandler(live_output)
+    if st.session_state.df is None:
+        st.error("Please upload a CSV file before asking questions.")
+        return
 
+    if user_question:
+        with st.spinner("Analyzing..."):
+            thought_process = st.empty()
+            
             try:
-                # Execute the pandas agent and display its progress
-                response = st.session_state.pandas_agent.invoke(user_question, callbacks=[st_callback])
-                response_content = response.get('output', str(response)) if isinstance(response, dict) else str(response)
-                intermediate_steps = response.get('intermediate_steps', []) if isinstance(response, dict) else []
+                # Generate response
+                thought_process.markdown("### Thought Process")
                 
-                # Format intermediate steps
-                formatted_steps = "\n\n".join([
-                    f"**Thought:** {step[0].log}\n**Action:** {step[0].tool}\n**Action Input:** {step[0].tool_input}\n**Observation:** {step[1]}"
-                    for step in intermediate_steps
-                ])
+                response_generator = generate_response(user_question)
                 
-                # Generate insightful response
-                insightful_response = generate_insightful_response(user_question, response_content, formatted_steps)
+                reasoning_steps = []
+                for steps, _ in response_generator:
+                    for step in steps:
+                        reasoning_steps.append(step)
+                        thought_process.markdown(f"**{step[0]}**\n{step[1]}\n")
                 
-                # Clear the live output
-                live_output.empty()
-                thought_process.empty()
+                # Extract final answer
+                final_answer = reasoning_steps[-1][1] if reasoning_steps else "No final answer generated."
                 
                 # Add the response to chat history
                 st.session_state.chat_history.append({"role": "human", "content": user_question})
                 st.session_state.chat_history.append({
                     "role": "ai",
-                    "content": insightful_response,
-                    "thought_process": f"**Initial Analysis:**\n{response_content}\n\n**Detailed Thought Process:**\n{formatted_steps}"
+                    "content": final_answer,
+                    "thought_process": "### Detailed Thought Process:\n" + 
+                                       "\n".join([f"**{step[0]}**\n{step[1]}" for step in reasoning_steps])
                 })
 
                 # Display the updated chat history
@@ -275,8 +256,8 @@ def handle_user_input(user_question: str):
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
-                
-                
+                st.error(f"Error details: {type(e).__name__}, {str(e)}")
+
 def display_chat_history():
     for message in reversed(st.session_state.chat_history):
         if message["role"] == "human":

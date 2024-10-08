@@ -75,6 +75,14 @@ def handle_file_upload(uploaded_file):
             st.sidebar.error(f"Error processing file: {str(e)}")
 
 def create_pandas_agent():
+    # Enhanced system message to provide context about location variations
+    system_message = """You are an AI assistant analyzing McDonald's store data. When processing queries about locations:
+    1. Consider that locations might be represented in various ways (e.g., full names, abbreviations).
+    2. For U.S. states, consider both full names (e.g., "Florida") and abbreviations (e.g., "fl").
+    3. Use flexible matching techniques when querying the data.
+    4. If a direct match isn't found, consider alternative representations and inform the user about your approach.
+    """
+    
     if st.session_state.df is not None and st.session_state.llm is not None:
         st.session_state.pandas_agent = create_pandas_dataframe_agent(
             st.session_state.llm,
@@ -83,6 +91,7 @@ def create_pandas_agent():
             agent_type="zero-shot-react-description",
             return_intermediate_steps=True,
             allow_dangerous_code=True,
+            prefix=system_message
         )
 
 def make_api_call(messages, max_tokens, is_final_answer=False):
@@ -152,11 +161,12 @@ def generate_response(prompt, initial_response, intermediate_steps):
         
         messages.append({"role": "assistant", "content": json.dumps(step_data)})
         
+        yield steps, None  # Yield intermediate steps
+        
         if step_data['next_action'] == 'final_answer' or step_count > 25:
             break
         
         step_count += 1
-        yield steps, None
 
     messages.append({"role": "user", "content": """Please provide the final answer based solely on your reasoning above. 
                      Ensure your answer is consistent with the intermediate steps and results.
@@ -239,35 +249,49 @@ def generate_insightful_response(user_question, initial_response, thought_proces
 def handle_user_input(user_question: str):
     if user_question and st.session_state.pandas_agent:
         with st.spinner("Analyzing..."):
-            live_output = st.empty()
             thought_process = st.empty()
-            st_callback = StreamlitCallbackHandler(live_output)
-
+            
             try:
-                # Execute the pandas agent and display its progress
-                response = st.session_state.pandas_agent.invoke(user_question, callbacks=[st_callback])
+                # Initialize the reasoning chain
+                reasoning_steps = []
+                
+                # Step 1: Execute the pandas agent
+                thought_process.markdown("### Thought Process")
+                thought_process.markdown("**Step 1: Executing Pandas Agent**")
+                
+                response = st.session_state.pandas_agent.invoke(user_question)
                 response_content = response.get('output', str(response)) if isinstance(response, dict) else str(response)
                 intermediate_steps = response.get('intermediate_steps', []) if isinstance(response, dict) else []
                 
-                # Format intermediate steps
-                formatted_steps = "\n\n".join([
-                    f"**Thought:** {step[0].log}\n**Action:** {step[0].tool}\n**Action Input:** {step[0].tool_input}\n**Observation:** {step[1]}"
-                    for step in intermediate_steps
-                ])
+                # Format and display pandas agent steps
+                for i, step in enumerate(intermediate_steps, 1):
+                    step_content = f"Thought: {step[0].log}\nAction: {step[0].tool}\nAction Input: {step[0].tool_input}\nObservation: {step[1]}"
+                    reasoning_steps.append((f"Pandas Agent Step {i}", step_content))
+                    thought_process.markdown(f"**Pandas Agent Step {i}**\n{step_content}\n")
                 
-                # Generate insightful response
-                insightful_response = generate_insightful_response(user_question, response_content, formatted_steps)
+                # Step 2: Generate insightful response
+                thought_process.markdown("**Step 2: Generating Insightful Response**")
                 
-                # Clear the live output
-                live_output.empty()
-                thought_process.empty()
+                response_generator = generate_response(user_question, response_content, str(intermediate_steps))
+                
+                for steps, _ in response_generator:
+                    for step in steps:
+                        reasoning_steps.append(step)
+                        thought_process.markdown(f"**{step[0]}**\n{step[1]}\n")
+                
+                # Extract final answer
+                final_answer = reasoning_steps[-1][1] if reasoning_steps else "No final answer generated."
+                
+                # Generate insightful response (if needed)
+                insightful_response = final_answer  # Or use generate_insightful_response() if you want additional processing
                 
                 # Add the response to chat history
                 st.session_state.chat_history.append({"role": "human", "content": user_question})
                 st.session_state.chat_history.append({
                     "role": "ai",
                     "content": insightful_response,
-                    "thought_process": f"**Initial Analysis:**\n{response_content}\n\n**Detailed Thought Process:**\n{formatted_steps}"
+                    "thought_process": "### Detailed Thought Process:\n" + 
+                                       "\n".join([f"**{step[0]}**\n{step[1]}" for step in reasoning_steps])
                 })
 
                 # Display the updated chat history
@@ -275,8 +299,9 @@ def handle_user_input(user_question: str):
 
             except Exception as e:
                 st.error(f"An error occurred: {str(e)}")
-                
-                
+                st.error(f"Error details: {type(e).__name__}, {str(e)}")
+
+                                
 def display_chat_history():
     for message in reversed(st.session_state.chat_history):
         if message["role"] == "human":

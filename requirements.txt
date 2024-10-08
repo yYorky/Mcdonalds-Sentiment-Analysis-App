@@ -38,3 +38,7 @@ opencv-python
 ghostscript
 lxml
 tenacity
+re
+collections
+nltk
+matplotlib
