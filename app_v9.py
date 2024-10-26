@@ -22,7 +22,7 @@ load_dotenv()
 
 # Constants
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MODEL_OPTIONS = ['llama-3.1-70b-versatile', 'llama3-70b-8192', 'llama-guard-3-8b' 'gemma2-9b-it', 'mixtral-8x7b-32768']
+MODEL_OPTIONS = ['llama3-8b-8192', 'llama-3.1-70b-versatile', 'llama3-70b-8192', 'llama-guard-3-8b' 'gemma2-9b-it', 'mixtral-8x7b-32768']
 
 @st.cache_resource
 def load_llm(model_name: str) -> ChatGroq:
@@ -106,6 +106,7 @@ def create_pandas_agent():
             st.session_state.df_processed,
             verbose=True,
             agent_type="zero-shot-react-description",
+            max_iterations=3,
             return_intermediate_steps=True,
             allow_dangerous_code=True,
         )
@@ -149,7 +150,7 @@ def vector_embedding():
 def create_rag_chain():
     if st.session_state.vectors is not None and st.session_state.llm is not None:
         memory = ConversationBufferMemory(memory_key='chat_history', return_messages=True, output_key='answer')
-        retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 200})
+        retriever = st.session_state.vectors.as_retriever(search_kwargs={"k": 50})
         st.session_state.rag_chain = ConversationalRetrievalChain.from_llm(
             llm=st.session_state.llm,
             retriever=retriever,

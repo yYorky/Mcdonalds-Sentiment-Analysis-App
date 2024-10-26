@@ -38,7 +38,7 @@ opencv-python
 ghostscript
 lxml
 tenacity
-re
-collections
 nltk
 matplotlib
+scipy
+langchain-text-splitters
